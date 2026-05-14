@@ -8,7 +8,7 @@
 #define NUM_LEDS    1
 #define BRIGHTNESS  96
 
-// --- Buttons (wired pin -> button -> +3V3, internal pulldown) ---
+// --- Buttons (wired pin -> button -> GND, internal pullup) ---
 #define BTN_ACCEPT_PIN  13
 #define BTN_REJECT_PIN  12
 #define BTN_DEBOUNCE_MS 30
@@ -80,7 +80,7 @@ void sendPermission(const char *decision) {
 void pollButtons() {
   uint32_t now = millis();
   for (auto &b : gButtons) {
-    bool reading = digitalRead(b.pin) == HIGH;
+    bool reading = digitalRead(b.pin) == LOW;  // active-low (switch to GND)
     if (reading != b.lastReading) {
       b.lastReading = reading;
       b.lastChangeMs = now;
@@ -251,7 +251,7 @@ void setup() {
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
   FastLED.setBrightness(BRIGHTNESS);
 
-  for (auto &b : gButtons) pinMode(b.pin, INPUT_PULLDOWN);
+  for (auto &b : gButtons) pinMode(b.pin, INPUT_PULLUP);
 
   setupBLE();
 }
