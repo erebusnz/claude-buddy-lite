@@ -98,8 +98,11 @@ sketch if you'd rather have the foot pedal deny instead.
    - Upload speed: **921600**
 5. Plug in the SuperMini, pick the serial port, and hit Upload.
 
-On boot the device advertises as **`Claude-Buddy`** — the LED will start its
-slow dim blue pulse. Next, pair it with Claude Desktop (below).
+On boot the device advertises as **`Claude-Buddy-Lite-XXXXX`**, where the
+5-char suffix is the last three bytes of the BT MAC encoded as Crockford
+base32 (so two Buddies in the same room don't clash in the picker, and the
+suffix has no `I`/`L`/`O`/`U` ambiguity). The LED will start its slow dim
+blue pulse. Next, pair it with Claude Desktop (below).
 
 ## Enable Hardware Buddy in Claude Desktop
 
@@ -110,7 +113,10 @@ Windows), but lives behind the developer menu. It is *not* part of the
 1. Open **Claude Desktop**.
 2. **Help → Troubleshooting → Enable Developer Mode.**
 3. **Developer → Hardware Buddy → Connect.**
-4. In the picker, select **`Claude-Buddy`**.
+4. In the picker, select your device — it appears as
+   **`Claude-Buddy-Lite-XXXXX`** (the 5-char suffix is the last three bytes
+   of its BT MAC in Crockford base32, also printed to the USB serial console
+   at boot).
 5. If macOS prompts for Bluetooth permission, allow it.
 
 When the connection succeeds the LED switches from the dim blue pulse to a

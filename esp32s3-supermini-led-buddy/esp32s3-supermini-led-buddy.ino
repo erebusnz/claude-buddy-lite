@@ -2,6 +2,7 @@
 #include <FastLED.h>
 #include <NimBLEDevice.h> // NimBLE-Arduino
 #include <ArduinoJson.h>
+#include <esp_mac.h>
 
 // --- Onboard WS2812 RGB LED ---
 #define LED_PIN     48
@@ -18,7 +19,11 @@
 #define NUS_RX_UUID      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  // desktop -> device
 #define NUS_TX_UUID      "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  // device -> desktop
 
-#define DEVICE_NAME           "Claude-Buddy"
+// Advertised name is DEVICE_NAME_BASE + "-" + Crockford-base32 of the last
+// 3 bytes of the BT MAC, e.g. "Claude-Buddy-Lite-XK7N3" — 5 chars instead
+// of 6 hex, no visually ambiguous I/L/O/U. Final string is built in
+// setupBLE() into gDeviceName.
+#define DEVICE_NAME_BASE      "Claude-Buddy-Lite"
 #define HEARTBEAT_TIMEOUT_MS  30000
 
 // ESP32S3-Super Mini
@@ -38,6 +43,7 @@ volatile bool gConnected = false;
 
 String rxBuffer;
 NimBLECharacteristic *txChar = nullptr;
+char gDeviceName[32] = DEVICE_NAME_BASE;
 
 // Active prompt id from the latest heartbeat snapshot's "prompt" object.
 // Empty string = no pending permission prompt.
@@ -163,7 +169,20 @@ class RxCallbacks : public NimBLECharacteristicCallbacks {
 };
 
 void setupBLE() {
-  NimBLEDevice::init(DEVICE_NAME);
+  // Suffix the advertised name with the last 3 bytes of the BT MAC, encoded
+  // as 5 chars of Crockford base32. Read from eFuse so the value is available
+  // before the BT controller starts and is stable across reboots — handy when
+  // more than one Buddy is in BLE range.
+  uint8_t mac[6] = {0};
+  esp_read_mac(mac, ESP_MAC_BT);
+  uint32_t v = ((uint32_t)mac[3] << 16) | ((uint32_t)mac[4] << 8) | mac[5];
+  static const char crockford[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";  // no I L O U
+  char b32[6];
+  for (int i = 4; i >= 0; --i) { b32[i] = crockford[v & 0x1F]; v >>= 5; }
+  b32[5] = 0;
+  snprintf(gDeviceName, sizeof(gDeviceName), "%s-%s", DEVICE_NAME_BASE, b32);
+
+  NimBLEDevice::init(gDeviceName);
   NimBLEDevice::setMTU(247);
 
   NimBLEServer *server = NimBLEDevice::createServer();
@@ -190,11 +209,11 @@ void setupBLE() {
   adv->setAdvertisementData(advData);
 
   NimBLEAdvertisementData scanData;
-  scanData.setName(DEVICE_NAME);
+  scanData.setName(gDeviceName);
   adv->setScanResponseData(scanData);
 
   adv->start();
-  Serial.println("[BLE] advertising as " DEVICE_NAME);
+  Serial.printf("[BLE] advertising as %s\n", gDeviceName);
 }
 
 // ---------- LED animation ----------
@@ -246,7 +265,7 @@ void updateLed() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[boot] Claude-Buddy starting");
+  Serial.println("\n[boot] " DEVICE_NAME_BASE " starting");
 
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
   FastLED.setBrightness(BRIGHTNESS);
