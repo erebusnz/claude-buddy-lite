@@ -3,6 +3,7 @@
 #include <NimBLEDevice.h> // NimBLE-Arduino
 #include <ArduinoJson.h>
 #include <esp_mac.h>
+#include "commands.h"
 
 // --- Onboard WS2812 RGB LED ---
 #define LED_PIN     48
@@ -49,6 +50,10 @@ char gDeviceName[32] = DEVICE_NAME_BASE;
 // Empty string = no pending permission prompt.
 char gPromptId[64] = {0};
 
+// Safety score for the active prompt's command, 1 (safe) .. 5 (destructive).
+// 0 means "no active prompt"; the LED falls back to a neutral hue.
+volatile uint8_t gPromptScore = 0;
+
 struct Button {
   uint8_t pin;
   const char *decision;  // "once" = approve, "deny" = reject
@@ -81,6 +86,7 @@ void sendPermission(const char *decision) {
   // Clear locally so a second press doesn't double-send before the next
   // heartbeat arrives. The desktop will drop `prompt` from the next snapshot.
   gPromptId[0] = 0;
+  gPromptScore = 0;
 }
 
 void pollButtons() {
@@ -114,18 +120,27 @@ void handleJsonLine(const String &line) {
 
     gLastHeartbeatMs = millis();
 
-    // Track the active permission prompt id so the buttons can respond to it.
-    const char *id = doc["prompt"]["id"].as<const char *>();
+    // Track the active permission prompt id so the buttons can respond to it,
+    // and score the `hint` preview (Bash tool prompts carry the command text
+    // here, truncated by the desktop) so the WAITING LED can tint yellow->red.
+    const char *id   = doc["prompt"]["id"].as<const char *>();
+    const char *tool = doc["prompt"]["tool"].as<const char *>();
+    const char *hint = doc["prompt"]["hint"].as<const char *>();
     if (id && *id) {
       strncpy(gPromptId, id, sizeof(gPromptId) - 1);
       gPromptId[sizeof(gPromptId) - 1] = 0;
+      gPromptScore = scoreCommand(hint);
     } else {
       gPromptId[0] = 0;
+      gPromptScore = 0;
     }
 
-    Serial.printf("[heartbeat] running=%d waiting=%d prompt=%s -> %s\n",
+    Serial.printf("[heartbeat] running=%d waiting=%d prompt=%s tool=%s hint=\"%s\" score=%u -> %s\n",
                   running, waiting,
                   gPromptId[0] ? gPromptId : "-",
+                  tool ? tool : "-",
+                  hint ? hint : "",
+                  (unsigned)gPromptScore,
                   gStatus == WAITING ? "WAITING" :
                   gStatus == RUNNING ? "RUNNING" : "IDLE");
   }
@@ -147,6 +162,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     gStatus = IDLE;
     rxBuffer = "";
     gPromptId[0] = 0;
+    gPromptScore = 0;
     Serial.printf("[BLE] disconnected (reason=0x%02x), re-advertising\n", reason);
     NimBLEDevice::startAdvertising();
   }
@@ -240,18 +256,25 @@ void updateLed() {
     }
 
     case RUNNING: {
-      // Slow pulse (~2s) blending blue <-> green.
-      uint8_t pulse = sin8(now / 8);
-      uint8_t mix   = sin8(now / 32);
-      out = blend(CRGB::Blue, CRGB::Green, mix).nscale8(pulse);
+      // Slow ~2s cyan pulse, brightness floor 25% -> peak 100%. Sin8 gives
+      // 0..255; scale into 64..255 so the LED never drops to off.
+      uint8_t pulse  = sin8(now / 8);
+      uint8_t bright = 64 + scale8(pulse, 191);
+      out = CRGB::Cyan;
+      out.nscale8(bright);
       break;
     }
 
     case WAITING: {
-      // Fast pulse (~0.5s) blending red <-> yellow.
+      // Fast pulse (~0.5s). Hue is driven by scoreCommand() on the prompt's
+      // `hint` text: score 1 -> yellow (HSV 64), score 5 -> red (HSV 0).
+      // Linear mapping in between. No active score -> medium (orange-ish).
       uint8_t pulse = sin8(now / 2);
-      uint8_t mix   = sin8(now / 8);
-      out = blend(CRGB::Red, CRGB::Yellow, mix).nscale8(pulse);
+      uint8_t s = gPromptScore;
+      if (s < 1) s = 3;
+      if (s > 5) s = 5;
+      uint8_t hue = (uint8_t)((5 - s) * 16); // 1->64, 2->48, 3->32, 4->16, 5->0
+      out = CHSV(hue, 255, pulse);
       break;
     }
   }
