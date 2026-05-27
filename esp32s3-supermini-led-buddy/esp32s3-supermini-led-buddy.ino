@@ -3,7 +3,7 @@
 #include <NimBLEDevice.h> // NimBLE-Arduino
 #include <ArduinoJson.h>
 #include <esp_mac.h>
-#include "commands.h"
+#include "commands_score.h"
 
 // --- Onboard WS2812 RGB LED ---
 #define LED_PIN     48
@@ -267,13 +267,14 @@ void updateLed() {
 
     case WAITING: {
       // Fast pulse (~0.5s). Hue is driven by scoreCommand() on the prompt's
-      // `hint` text: score 1 -> yellow (HSV 64), score 5 -> red (HSV 0).
-      // Linear mapping in between. No active score -> medium (orange-ish).
+      // `hint` text: traffic-light scale with yellow pinned at the midpoint —
+      // 1->green (96), 3->yellow (64), 5->red (0). No active score -> yellow.
       uint8_t pulse = sin8(now / 2);
       uint8_t s = gPromptScore;
       if (s < 1) s = 3;
       if (s > 5) s = 5;
-      uint8_t hue = (uint8_t)((5 - s) * 16); // 1->64, 2->48, 3->32, 4->16, 5->0
+      uint8_t hue = (s <= 3) ? (uint8_t)(64 + (3 - s) * 16)   // 1->96, 2->80, 3->64
+                             : (uint8_t)(64 - (s - 3) * 32);  // 4->32, 5->0
       out = CHSV(hue, 255, pulse);
       break;
     }

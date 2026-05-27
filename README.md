@@ -23,9 +23,40 @@ desktop bridge.
 | Advertising | Slow dim blue pulse | No desktop paired yet |
 | Idle (paired) | Steady dim white | Connected, no active turn |
 | Running | Slow blue/green pulse | Claude is working |
-| Waiting | Fast red/yellow pulse | Permission prompt pending — press a button |
+| Waiting | Fast pulse, green → red | Permission prompt pending — hue reflects the [command danger score](#command-danger-score) |
 
 If the desktop heartbeat stops for more than 30 s, the LED falls back to idle.
+
+### Command danger score
+
+When Claude is waiting on a permission prompt for a Bash command, the LED
+hue is driven by a 1–5 danger score so you can decide whether to approve
+before reading the screen. The prompt's `hint` field (a truncated preview
+of the command) is matched against a keyword table of ~750 entries; the
+highest matching score wins, and unknown commands default to **3** so an
+unrecognized prompt leans cautious instead of safe-green.
+
+| Score | Hue | Meaning | Examples |
+|------:|-----|---------|----------|
+| **1** | Green | Read-only / inspect | `ls`, `cat`, `tree`, `grep`, `git status`, `kubectl get`, `jq`, `aws ec2 describe` |
+| **2** | Yellow-green | Runs code locally | `python`, `node`, `pytest`, `go test`, `npm run`, `bash` |
+| **3** | Yellow | Writes locally, contained | `cp`, `mkdir`, `git commit`, `npm install`, `docker pull`, `sed -i`, `ssh-keygen` |
+| **4** | Orange | Mutates system / remote state | `sudo`, `chmod`, `mv`, `git push`, `kubectl apply`, `docker rm -f`, `aws ec2 stop-instances`, `gh pr merge` |
+| **5** | Red | Destructive / irreversible | `rm -rf`, `git push --force`, `git filter-repo`, `kubectl delete`, `terraform destroy`, `aws s3 rm`, `gh repo delete`, `rsync --delete`, `prisma migrate reset` |
+
+The matcher lives in
+[`commands_score.h`](esp32s3-supermini-led-buddy/commands_score.h); the
+~750-entry keyword table lives in
+[`commands_table.h`](esp32s3-supermini-led-buddy/commands_table.h). Matching
+is case-insensitive and word-boundary aware, so multi-token entries like
+`"git push --force"` land naturally while bare `"rm"` doesn't catch
+`"warm"`. The loop runs highest-score-first, short-circuits past any entry
+that can't beat the current best, and exits as soon as a 5 hits — so even
+the full table scores in well under a millisecond on the S3.
+
+To re-tune for your own threat model — say, demoting `git push` from 4 to
+3, or promoting `terraform apply` to 5 — edit the corresponding entry in
+`commands_table.h` and reflash.
 
 ## Hardware
 
