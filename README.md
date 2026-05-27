@@ -5,6 +5,8 @@ It mirrors the state of your Claude Code session on the onboard WS2812 RGB LED a
 lets you approve or deny permission prompts with two physical buttons — over BLE,
 no extra hardware required.
 
+![Claude Buddy Lite RGB LED in action](rgb-led-flash.gif)
+
 It speaks the [Hardware Buddy BLE protocol](https://github.com/anthropics/claude-desktop-buddy/blob/main/REFERENCE.md)
 and pairs with the [claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)
 desktop bridge.
